@@ -12,14 +12,14 @@ async function test() {
     
     console.log(`Enviando mensaje de prueba a: ${testNumber}...`);
     
-    const result = await sendWhatsAppMessage(testNumber, 'hello_world', []);
+    const result = await sendWhatsAppMessage(testNumber, 'hello_world', 'en_US');
     
-    if (result.success) {
+    if (result && !result.error) {
         console.log('✅ ¡ÉXITO! Mensaje enviado correctamente.');
-        console.log('Respuesta de Meta:', JSON.stringify(result.data, null, 2));
+        console.log('Respuesta de Meta:', JSON.stringify(result, null, 2));
     } else {
         console.error('❌ ERROR al enviar mensaje.');
-        console.error('Detalle:', result.error);
+        console.error('Detalle:', result?.error || 'Unknown error');
     }
 }
 
