@@ -28,6 +28,8 @@ export async function POST(request: Request) {
         if (body.object === 'whatsapp_business_account' && body.entry?.[0]?.changes?.[0]?.value) {
             const value = body.entry[0].changes[0].value;
             const message = value.messages?.[0];
+            const metadata = value.metadata;
+            const recipientPhoneId = metadata?.phone_number_id; // Este es el ID dinámico
             
             if (!message) {
                 console.log('No message found in payload changes.');
@@ -35,7 +37,7 @@ export async function POST(request: Request) {
             }
 
             const sender = message.from;
-            console.log(`Message from ${sender} (type: ${message.type})`);
+            console.log(`Message from ${sender} using ID ${recipientPhoneId}`);
 
             // 1. Manejar Mensajes de Texto
             if (message.type === 'text') {
@@ -52,14 +54,15 @@ export async function POST(request: Request) {
                         await sendWhatsAppButtons(
                             sender,
                             '¡Hola! Soy el asistente de BarberPro. Tenemos estos horarios hoy. ¿Cuál prefieres?',
-                            topSlots.map(s => ({ id: `slot_${s}`, title: s }))
+                            topSlots.map(s => ({ id: `slot_${s}`, title: s })),
+                            recipientPhoneId
                         );
                     } else {
-                        await sendWhatsAppText(sender, 'Lo siento, no tenenos más citas disponibles por hoy. ¡Prueba mañana!');
+                        await sendWhatsAppText(sender, 'Lo siento, no tenenos más citas disponibles por hoy. ¡Prueba mañana!', recipientPhoneId);
                     }
                 } else {
                     console.log('Intent mismatch. Sending fallback message.');
-                    await sendWhatsAppText(sender, '¡Hola! Escribe "cita" para ver los horarios disponibles o ven a visitarnos directamente.');
+                    await sendWhatsAppText(sender, '¡Hola! Escribe "cita" para ver los horarios disponibles o ven a visitarnos directamente.', recipientPhoneId);
                 }
             }
 
@@ -70,7 +73,7 @@ export async function POST(request: Request) {
                 
                 if (responseId?.startsWith('slot_')) {
                     const time = responseId.replace('slot_', '');
-                    await sendWhatsAppText(sender, `¡Excelente! He anotado tu interés para las ${time}. Favor de confirmar asistiendo 5 min antes.`);
+                    await sendWhatsAppText(sender, `¡Excelente! He anotado tu interés para las ${time}. Favor de confirmar asistiendo 5 min antes.`, recipientPhoneId);
                 }
             }
         }
