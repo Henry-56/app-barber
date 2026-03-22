@@ -20,6 +20,7 @@ function cn(...inputs: ClassValue[]) {
 
 const menuItems = [
     { name: 'Dashboard', icon: LayoutDashboard, href: '/' },
+    { name: 'Agenda', icon: Calendar, href: '/agenda' },
     { name: 'Ventas', icon: ShoppingBag, href: '/ventas' },
     { name: 'Clientes', icon: Users, href: '/clientes' },
     { name: 'Barberos', icon: Scissors, href: '/barberos' },
