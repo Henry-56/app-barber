@@ -39,23 +39,35 @@ export async function POST(request: Request) {
 
             const sender = message.from;
             const session = await getBotSession(sender);
-            const state = session?.state || 'INITIAL';
+            let state = session?.state || 'INITIAL';
 
-            console.log(`User ${sender} in state ${state}`);
+            console.log(`User ${sender} in current state: ${state}`);
 
-            // 1. Manejar Mensajes de Texto (o clics de botones que vienen como texto en algunos casos)
+            // 1. Manejar Mensajes de Texto
             if (message.type === 'text') {
-                const text = message.text.body.trim();
+                const text = message.text.body.trim().toLowerCase();
+
+                // Comando de RESET universal
+                if (text === 'hola' || text === 'reiniciar' || text === 'inicio') {
+                    console.log('Resetting session for user');
+                    await clearBotSession(sender);
+                    state = 'INITIAL';
+                    // Continuamos para procesarlo como INITIAL abajo
+                }
 
                 if (state === 'INITIAL') {
+                    console.log('Bot state INITIAL: Greeting user');
                     await sendWhatsAppText(sender, '¡Hola! Bienvenido a BarberPro. 💈 ¿Cómo te llamas para poder agendarte?', recipientPhoneId);
                     await upsertBotSession(sender, 'AWAITING_NAME');
                     return NextResponse.json({ status: 'ok' });
                 }
 
                 if (state === 'AWAITING_NAME') {
-                    const name = text;
+                    const name = message.text.body.trim();
+                    console.log(`Bot state AWAITING_NAME: Got name ${name}`);
                     const days = getNextThreeDays();
+                    console.log('Generating days for buttons:', JSON.stringify(days));
+                    
                     await upsertBotSession(sender, 'AWAITING_DAY', { name });
                     await sendWhatsAppButtons(
                         sender,
@@ -119,16 +131,27 @@ export async function POST(request: Request) {
 function getNextThreeDays() {
     const days = [];
     const now = new Date();
-    for (let i = 0; i < 3; i++) {
+    let count = 0;
+    let offset = 0;
+
+    while (count < 3 && offset < 7) {
         const d = new Date(now);
-        d.setDate(now.getDate() + i);
-        if (d.getDay() === 0) { // Saltar domingos
-            d.setDate(d.getDate() + 1);
+        d.setDate(now.getDate() + offset);
+        
+        // Saltar domingos
+        if (d.getDay() !== 0) {
+            const isToday = d.toDateString() === now.toDateString();
+            const tomorrow = new Date(now);
+            tomorrow.setDate(now.getDate() + 1);
+            const isTomorrow = d.toDateString() === tomorrow.toDateString();
+
+            days.push({
+                iso: d.toISOString().split('T')[0],
+                label: isToday ? 'Hoy' : isTomorrow ? 'Mañana' : d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })
+            });
+            count++;
         }
-        days.push({
-            iso: d.toISOString().split('T')[0],
-            label: i === 0 ? 'Hoy' : i === 1 ? 'Mañana' : d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })
-        });
+        offset++;
     }
     return days;
 }
