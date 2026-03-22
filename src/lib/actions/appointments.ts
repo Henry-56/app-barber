@@ -33,7 +33,7 @@ export async function createAppointment(data: {
                 await sendWhatsAppMessage(
                     customer.phone, 
                     'hello_world', // Plantilla por defecto de prueba
-                    []
+                    'en_US'
                 );
             }
         } catch (wsError) {
