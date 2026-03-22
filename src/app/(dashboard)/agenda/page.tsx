@@ -2,6 +2,7 @@ import { getAppointments } from '@/lib/actions/appointments';
 import { getBarbers } from '@/lib/actions/barbers';
 import { getCustomers } from '@/lib/actions/customers';
 import { getServices } from '@/lib/actions/services';
+import Link from 'next/link';
 import {
     Calendar,
     Clock,
@@ -10,37 +11,79 @@ import {
     Scissors,
     CheckCircle2,
     XCircle,
-    MessageSquare
+    MessageSquare,
+    ChevronLeft,
+    ChevronRight
 } from 'lucide-react';
 import { AppointmentModal } from '@/components/appointments/appointment-modal';
+import { DatePickerFilter } from '@/components/appointments/date-picker-filter';
 
-export default async function AgendaPage() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
+export default async function AgendaPage({
+    searchParams
+}: {
+    searchParams: Promise<{ date?: string }>
+}) {
+    const params = await searchParams;
+    const selectedDateStr = params.date || new Date().toISOString().split('T')[0];
+    const selectedDate = new Date(selectedDateStr + 'T00:00:00');
+    
+    const nextDay = new Date(selectedDate);
+    nextDay.setDate(selectedDate.getDate() + 1);
+    
+    const prevDay = new Date(selectedDate);
+    prevDay.setDate(selectedDate.getDate() - 1);
+    const prevDayStr = prevDay.toISOString().split('T')[0];
+    const nextDayStr = nextDay.toISOString().split('T')[0];
 
     const [appointmentsList, barbers, customers, services] = await Promise.all([
-        getAppointments(today, tomorrow),
+        getAppointments(selectedDate, nextDay),
         getBarbers(),
         getCustomers(''),
         getServices()
     ]);
+
+    const formattedDate = selectedDate.toLocaleDateString('es-ES', { 
+        weekday: 'long', 
+        day: 'numeric', 
+        month: 'long' 
+    });
 
     return (
         <div className="space-y-8">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-                        Agenda <span className="text-zinc-500 text-sm font-normal">/ Hoy</span>
+                        Agenda <span className="text-zinc-500 text-sm font-normal uppercase tracking-widest">/ {formattedDate}</span>
                     </h1>
-                    <p className="text-zinc-500 text-sm">Reserva, cancela y monitorea las citas de tus clientes.</p>
+                    <p className="text-zinc-500 text-sm">Gestiona las reservas de tu negocio de manera eficiente.</p>
                 </div>
-                <AppointmentModal
-                    customers={customers.map(c => ({ id: c.id, name: c.name }))}
-                    barbers={barbers.map(b => ({ id: b.id, name: b.name }))}
-                    services={services.map(s => ({ id: s.id, name: s.name, price: s.price }))}
-                />
+                
+                <div className="flex items-center gap-2">
+                    <div className="flex bg-zinc-900 rounded-xl p-1 border border-zinc-800">
+                        <Link 
+                            href={`/agenda?date=${prevDayStr}`}
+                            className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-all"
+                        >
+                            <ChevronLeft className="w-5 h-5" />
+                        </Link>
+                        
+                        <DatePickerFilter initialDate={selectedDateStr} />
+
+                        <Link 
+                            href={`/agenda?date=${nextDayStr}`}
+                            className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-all"
+                        >
+                            <ChevronRight className="w-5 h-5" />
+                        </Link>
+                    </div>
+
+                    <AppointmentModal
+                        customers={customers.map(c => ({ id: c.id, name: c.name }))}
+                        barbers={barbers.map(b => ({ id: b.id, name: b.name }))}
+                        services={services.map(s => ({ id: s.id, name: s.name, price: s.price }))}
+                        defaultDate={selectedDateStr}
+                    />
+                </div>
             </div>
 
             {/* Barber Selector (Optional for filtering) */}

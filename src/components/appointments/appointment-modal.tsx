@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
 import { createAppointment } from '@/lib/actions/appointments';
@@ -14,9 +14,10 @@ interface AppointmentModalProps {
     customers: OptionList[];
     barbers: OptionList[];
     services: OptionList[];
+    defaultDate?: string;
 }
 
-export function AppointmentModal({ customers, barbers, services }: AppointmentModalProps) {
+export function AppointmentModal({ customers, barbers, services, defaultDate }: AppointmentModalProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
@@ -24,8 +25,15 @@ export function AppointmentModal({ customers, barbers, services }: AppointmentMo
         barberId: '',
         serviceId: '',
         time: '',
-        date: new Date().toISOString().split('T')[0], // YYYY-MM-DD
+        date: defaultDate || new Date().toISOString().split('T')[0], // YYYY-MM-DD
     });
+
+    // Sincronizar fecha si cambia el filtro de la página
+    useEffect(() => {
+        if (defaultDate) {
+            setFormData(prev => ({ ...prev, date: defaultDate }));
+        }
+    }, [defaultDate]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
