@@ -50,3 +50,62 @@ export async function sendWhatsAppMessage(to: string, templateName: string, para
         return { success: false, error: 'Error de red' };
     }
 }
+
+export async function sendWhatsAppText(to: string, text: string) {
+    const token = process.env.WHATSAPP_TOKEN;
+    const phoneId = process.env.WHATSAPP_PHONE_ID;
+
+    try {
+        const response = await fetch(`https://graph.facebook.com/v22.0/${phoneId}/messages`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                messaging_product: 'whatsapp',
+                to: to.replace(/\D/g, ''),
+                type: 'text',
+                text: { body: text },
+            }),
+        });
+        return await response.json();
+    } catch (error) {
+        console.error('WhatsApp Text Error:', error);
+        return { error: 'Failed' };
+    }
+}
+
+export async function sendWhatsAppButtons(to: string, text: string, buttons: { id: string, title: string }[]) {
+    const token = process.env.WHATSAPP_TOKEN;
+    const phoneId = process.env.WHATSAPP_PHONE_ID;
+
+    try {
+        const response = await fetch(`https://graph.facebook.com/v22.0/${phoneId}/messages`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                messaging_product: 'whatsapp',
+                to: to.replace(/\D/g, ''),
+                type: 'interactive',
+                interactive: {
+                    type: 'button',
+                    body: { text },
+                    action: {
+                        buttons: buttons.map(b => ({
+                            type: 'reply',
+                            reply: { id: b.id, title: b.title }
+                        }))
+                    }
+                },
+            }),
+        });
+        return await response.json();
+    } catch (error) {
+        console.error('WhatsApp Buttons Error:', error);
+        return { error: 'Failed' };
+    }
+}
