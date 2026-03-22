@@ -1,10 +1,18 @@
-import { pgTable, text, varchar, timestamp, uuid, decimal, integer, pgEnum, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, text, varchar, timestamp, uuid, decimal, integer, pgEnum, boolean, jsonb } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const statusEnum = pgEnum('status', ['active', 'inactive']);
 export const paymentMethodEnum = pgEnum('payment_method', ['efectivo', 'yape', 'plin', 'tarjeta']);
 export const membershipStatusEnum = pgEnum('membership_status', ['active', 'expired', 'cancelled']);
 export const appointmentStatusEnum = pgEnum('appointment_status', ['scheduled', 'completed', 'cancelled']);
+
+export const botSessions = pgTable('bot_sessions', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    phone: varchar('phone', { length: 20 }).notNull().unique(),
+    state: varchar('state', { length: 50 }).notNull().default('INITIAL'),
+    data: jsonb('data').default({}),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
 
 export const customers = pgTable('customers', {
     id: uuid('id').defaultRandom().primaryKey(),

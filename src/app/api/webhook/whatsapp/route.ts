@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { sendWhatsAppText, sendWhatsAppButtons } from '@/lib/whatsapp';
 import { getAvailableSlots } from '@/lib/actions/availability';
+import { getBotSession, upsertBotSession, clearBotSession } from '@/lib/actions/bot-sessions';
+import { db } from '@/lib/db';
+import { appointments, customers } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
@@ -29,40 +33,37 @@ export async function POST(request: Request) {
             const value = body.entry[0].changes[0].value;
             const message = value.messages?.[0];
             const metadata = value.metadata;
-            const recipientPhoneId = metadata?.phone_number_id; // Este es el ID dinámico
+            const recipientPhoneId = metadata?.phone_number_id; 
             
-            if (!message) {
-                console.log('No message found in payload changes.');
-                return NextResponse.json({ status: 'ok' });
-            }
+            if (!message) return NextResponse.json({ status: 'ok' });
 
             const sender = message.from;
-            console.log(`Message from ${sender} using ID ${recipientPhoneId}`);
+            const session = await getBotSession(sender);
+            const state = session?.state || 'INITIAL';
 
-            // 1. Manejar Mensajes de Texto
+            console.log(`User ${sender} in state ${state}`);
+
+            // 1. Manejar Mensajes de Texto (o clics de botones que vienen como texto en algunos casos)
             if (message.type === 'text') {
-                const text = message.text.body.toLowerCase();
-                console.log(`Text Body: ${text}`);
+                const text = message.text.body.trim();
 
-                if (text.includes('hola') || text.includes('cita') || text.includes('agendar')) {
-                    console.log('Intent match: Booking');
-                    const slots = await getAvailableSlots(new Date());
-                    const topSlots = slots.slice(0, 3); 
+                if (state === 'INITIAL') {
+                    await sendWhatsAppText(sender, '¡Hola! Bienvenido a BarberPro. 💈 ¿Cómo te llamas para poder agendarte?', recipientPhoneId);
+                    await upsertBotSession(sender, 'AWAITING_NAME');
+                    return NextResponse.json({ status: 'ok' });
+                }
 
-                    if (topSlots.length > 0) {
-                        console.log(`Sending ${topSlots.length} slots...`);
-                        await sendWhatsAppButtons(
-                            sender,
-                            '¡Hola! Soy el asistente de BarberPro. Tenemos estos horarios hoy. ¿Cuál prefieres?',
-                            topSlots.map(s => ({ id: `slot_${s}`, title: s })),
-                            recipientPhoneId
-                        );
-                    } else {
-                        await sendWhatsAppText(sender, 'Lo siento, no tenenos más citas disponibles por hoy. ¡Prueba mañana!', recipientPhoneId);
-                    }
-                } else {
-                    console.log('Intent mismatch. Sending fallback message.');
-                    await sendWhatsAppText(sender, '¡Hola! Escribe "cita" para ver los horarios disponibles o ven a visitarnos directamente.', recipientPhoneId);
+                if (state === 'AWAITING_NAME') {
+                    const name = text;
+                    const days = getNextThreeDays();
+                    await upsertBotSession(sender, 'AWAITING_DAY', { name });
+                    await sendWhatsAppButtons(
+                        sender,
+                        `¡Gusto en conocerte, ${name}! ¿Qué día te gustaría venir?`,
+                        days.map(d => ({ id: `day_${d.iso}`, title: d.label })),
+                        recipientPhoneId
+                    );
+                    return NextResponse.json({ status: 'ok' });
                 }
             }
 
@@ -70,10 +71,38 @@ export async function POST(request: Request) {
             if (message.type === 'interactive') {
                 const responseId = message.interactive.button_reply?.id;
                 console.log(`Interactive Reply ID: ${responseId}`);
-                
-                if (responseId?.startsWith('slot_')) {
+
+                // Selección de DÍA
+                if (state === 'AWAITING_DAY' && responseId?.startsWith('day_')) {
+                    const selectedDay = responseId.replace('day_', '');
+                    const slots = await getAvailableSlots(new Date(selectedDay));
+                    const topSlots = slots.slice(0, 3); // Limitamos a 3 por simplicidad de botones
+
+                    if (topSlots.length > 0) {
+                        await upsertBotSession(sender, 'AWAITING_SLOT', { day: selectedDay });
+                        await sendWhatsAppButtons(
+                            sender,
+                            `Perfecto. Tengo estos horarios para el ${selectedDay}. ¿Cuál prefieres?`,
+                            topSlots.map(s => ({ id: `slot_${s}`, title: s })),
+                            recipientPhoneId
+                        );
+                    } else {
+                        await sendWhatsAppText(sender, 'Lo siento, no hay más citas para ese día. Prueba con otro.', recipientPhoneId);
+                    }
+                    return NextResponse.json({ status: 'ok' });
+                }
+
+                // Selección de HORA (Finalización)
+                if (state === 'AWAITING_SLOT' && responseId?.startsWith('slot_')) {
                     const time = responseId.replace('slot_', '');
-                    await sendWhatsAppText(sender, `¡Excelente! He anotado tu interés para las ${time}. Favor de confirmar asistiendo 5 min antes.`, recipientPhoneId);
+                    const name = (session?.data as any).name;
+                    const day = (session?.data as any).day;
+
+                    // Crear Cita y posiblemente Cliente
+                    await finalizeBooking(sender, name, day, time);
+                    await sendWhatsAppText(sender, `¡Listo, ${name}! Tu cita ha sido agendada para el ${day} a las ${time}. ¡Te esperamos!`, recipientPhoneId);
+                    await clearBotSession(sender);
+                    return NextResponse.json({ status: 'ok' });
                 }
             }
         }
@@ -84,4 +113,51 @@ export async function POST(request: Request) {
         console.error('❌ Webhook Processing Error:', error.message || error);
         return NextResponse.json({ error: 'Internal Error' }, { status: 500 });
     }
+}
+
+// Helpers
+function getNextThreeDays() {
+    const days = [];
+    const now = new Date();
+    for (let i = 0; i < 3; i++) {
+        const d = new Date(now);
+        d.setDate(now.getDate() + i);
+        if (d.getDay() === 0) { // Saltar domingos
+            d.setDate(d.getDate() + 1);
+        }
+        days.push({
+            iso: d.toISOString().split('T')[0],
+            label: i === 0 ? 'Hoy' : i === 1 ? 'Mañana' : d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' })
+        });
+    }
+    return days;
+}
+
+async function finalizeBooking(phone: string, name: string, day: string, time: string) {
+    // 1. Buscar o crear cliente
+    let customer = await db.query.customers.findFirst({
+        where: eq(customers.phone, phone)
+    });
+
+    if (!customer) {
+        const [newCustomer] = await db.insert(customers).values({
+            name,
+            phone,
+        }).returning();
+        customer = newCustomer;
+    }
+
+    // 2. Crear cita
+    const appointmentTime = new Date(`${day}T${time}:00`);
+    // Buscamos un barbero y servicio por defecto si no existen (como fallback)
+    const barber = await db.query.barbers.findFirst();
+    const service = await db.query.services.findFirst();
+
+    await db.insert(appointments).values({
+        customerId: customer.id,
+        barberId: barber?.id || '',
+        serviceId: service?.id || '',
+        appointmentTime,
+        status: 'scheduled'
+    });
 }
